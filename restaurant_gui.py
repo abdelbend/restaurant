@@ -2,362 +2,404 @@ import tkinter as tk
 from tkinter import ttk
 import sqlite3
 
-conn = sqlite3.connect('test.db')
-c = conn.cursor()
+class RestaurantManagementSystem:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Restaurant Management System v1.0")
+        self.root.geometry("600x400")
+
+        self.style = ttk.Style()
+        self.style.configure("TButton", padding=5, relief="flat", foreground="white", background="#007BFF")
+        self.style.configure("TLabel", padding=5, font=('Arial', 12))
+        self.style.configure("TCombobox", padding=5, font=('Arial', 12))
+
+        self.create_widgets()
+        self.connect_to_database()
+
+    def run(self):
+        self.root.mainloop()
+        self.conn.commit()
+        self.conn.close()
+
+    def connect_to_database(self):
+        try:
+            self.conn = sqlite3.connect('restaurant.db')
+            self.cursor = self.conn.cursor()
+            self.create_tables()
+        except sqlite3.Error as e:
+            print(f"Error connecting to database: {e}")
+
+    def create_tables(self):
+        try:
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS menu (
+                    item TEXT PRIMARY KEY,
+                    price INTEGER
+                );
+            ''')
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS customer (
+                    name TEXT,
+                    quantity INTEGER,
+                    orders TEXT,
+                    order_id INTEGER
+                );
+            ''')
+        except sqlite3.Error as e:
+            print(f"Error creating tables: {e}")
+
+    def create_widgets(self):
+        self.frame = ttk.Frame(self.root, padding="20")
+        self.frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        ttk.Label(self.frame, text="Restaurant Management System", style="TLabel").grid(row=0, column=0, columnspan=2, pady=10)
+        options = [
+            ("Add a Customer", self.get_input),
+            ("Add an Element", self.add_element),  # Corrected
+            ("Delete Customer", self.delete_cus),
+            ("Delete Element", self.delete_ele),
+            ("Update the Price", self.update_p),
+            ("Get a Customer's Receipt", self.name_to_show)
+        ]
+
+        row_counter = 1
+        for text, command in options:
+            ttk.Button(self.frame, text=text, command=command, style="TButton").grid(row=row_counter, column=0, pady=5, sticky=tk.W)
+            row_counter += 1
 
 
-def show_menu():
-	c.execute("SELECT item FROM menu;")
-	menu = c.fetchall()
-	return menu
+    def execute_query(self, query, parameters=None):
+        try:
+            if parameters:
+                self.cursor.execute(query, parameters)
+            else:
+                self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"Error executing query: {e}")
+            return []
 
-list_entry = []
-list_order = []
-input_num = 0
+    def clear_frame(self):
+        for widget in self.frame.winfo_children():
+            widget.destroy()
 
-def max_orderid():
-	c.execute("SELECT MAX(order_id) FROM customer;")
-	tmp = c.fetchall()
-	x = None
-	if tmp[0][0] == x:
-		return 0
-	else:
-		return (int(tmp[0][0]))
+    # ... (previous code remains unchanged)
 
-def menu_list():
-    list1 = show_menu()
-    list2 = []
-    for i in range(0,len(list1)):
-        list2.append(list1[i][0])
-    return list2
+    def get_input(self):
+        self.clear_frame()
+        ttk.Label(self.frame, text="Enter Customer Name: ").grid(row=0, column=0)
+        name_var = tk.StringVar()
+        ttk.Entry(self.frame, textvariable=name_var).grid(row=0, column=1)
+        order_num = tk.IntVar()
+        ttk.Label(self.frame, text="How many elements are you ordering: ").grid(row=1, column=0)
+        ttk.Entry(self.frame, textvariable=order_num).grid(row=1, column=1)
+        ttk.Button(self.frame, text="Add", command=lambda: self.get_all(name_var, order_num)).grid(row=2, column=0)
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
+
+    def get_all(self, name_var, num_e):
+        self.clear_frame()
+        label_add = ttk.Label(self.frame, text="Added Successfully")
+        label_add.grid(row=0, column=0)
+
+        name = name_var.get()
+        num = num_e.get()
+        num = int(num)
+        list2 = self.menu_list()
+
+        list_entry = []
+        list_order = []
+
+        for i in range(0, num):
+            item = ttk.Combobox(self.frame)
+            item['values'] = list2
+            item.grid(padx=2, pady=1)
+            entry1 = ttk.Entry(self.frame)
+            entry1.grid()
+            list_entry.append(entry1)
+            list_order.append(item)
+
+        button_num = ttk.Button(self.frame, text="Order", command=lambda: self.get_quan(name, button_num, list_entry, list_order))
+        button_num.grid()
+
+    def add_element(self):
+        self.clear_frame()
+        element = tk.StringVar()
+        ttk.Label(self.frame, text="Enter Element Name: ").grid(row=0, column=0)
+        ttk.Entry(self.frame, textvariable=element).grid(row=0, column=1)
+        price = tk.IntVar()
+        ttk.Label(self.frame, text="Enter Price: ").grid(row=1, column=0)
+        ttk.Entry(self.frame, textvariable=price).grid(row=1, column=1)
+        ttk.Button(self.frame, text="Add Element", command=lambda: self.add_element_data(element, price)).grid(row=2, column=0)
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
+
+    def add_element_data(self, elem, pric):
+        element = elem.get()
+        price = int(pric.get())
+        list_price = []
+        list_cmp = []
+
+        list_price.extend((element, price))
+        query = "SELECT item FROM menu;"
+        list_cmp = self.execute_query(query)
+
+        for i in range(len(list_cmp)):
+            if element == list_cmp[i][0]:
+                label_e = ttk.Label(self.frame, text="This element already exists")
+                label_e.grid()
+                return
+
+        query = "INSERT INTO menu VALUES(?,?);"
+        self.execute_query(query, list_price)
+
+        label_d = ttk.Label(self.frame, text="Added Successfully")
+        label_d.grid()
+
+    def get_quan(self, name, button, list_entry, list_order):
+        quantity = [int(entry.get()) for entry in list_entry]
+
+        orders = [order.get() for order in list_order]
+        full_list = []
+
+        order_id = self.max_orderid() + 1
+
+        for i in range(len(list_entry)):
+            full_list.extend((name, quantity[i], orders[i], order_id))
+            query = "INSERT INTO customer VALUES(?,?,?,?);"
+            self.execute_query(query, full_list)
+            full_list.clear()
+            list_order[i].destroy()
+            list_entry[i].destroy()
+
+        self.create_widgets()
 
 
-def get_quantity(order_id,order):
-    quan_extract = []
-    quantity = []
-    for i in range(len(order)):
-        total_quan = 0
-        quan_extract.extend((order_id,order[i][0]))
-        c.execute("SELECT quantity FROM customer WHERE order_id =? AND orders LIKE ?;", quan_extract)
-        quan = c.fetchall()
-        for j in range(len(quan)):
-            total_quan += quan[j][0]
-        quantity.append(total_quan)
-        quan_extract.clear()
-    return quantity
+    def add_element(self):
+        self.clear_frame()
+        element = tk.StringVar()
+        ttk.Label(self.frame, text="Enter Element Name: ").grid(row=0, column=0)
+        ttk.Entry(self.frame, textvariable=element).grid(row=0, column=1)
+        price = tk.IntVar()
+        ttk.Label(self.frame, text="Enter Price: ").grid(row=1, column=0)
+        ttk.Entry(self.frame, textvariable=price).grid(row=1, column=1)
+        ttk.Button(self.frame, text="Add Element", command=lambda: self.add_element_data(element, price)).grid(row=2, column=0)
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
 
+    def add_element_data(self, elem, pric):
+        element = elem.get()
+        price = int(pric.get())
+        list_price = []
+        list_cmp = []
 
-def get_prices(order_id):
-    c.execute("SELECT DISTINCT orders FROM customer WHERE order_id =?;", [order_id])
-    billist = c.fetchall()
-    for i in range(0,len(billist)):
-        c.execute("SELECT price FROM menu WHERE item LIKE ?",(billist[i][0],))
-        if i == 0:
-            price_list = c.fetchall()
+        list_price.extend((element, price))
+        query = "SELECT item FROM menu;"
+        list_cmp = self.execute_query(query)
+
+        for i in range(len(list_cmp)):
+            if element == list_cmp[i][0]:
+                label_e = ttk.Label(self.frame, text="This element already exists")
+                label_e.grid()
+                return
+
+        query = "INSERT INTO menu VALUES(?,?);"
+        self.execute_query(query, list_price)
+
+        label_d = ttk.Label(self.frame, text="Added Successfully")
+        label_d.grid()
+
+    def delete_cus(self):
+        self.clear_frame()
+        label = ttk.Label(self.frame, text="Select customer to delete")
+        label.grid()
+
+        query = "SELECT DISTINCT name FROM customer;"
+        list_n = self.execute_query(query)
+        list_name = [item[0] for item in list_n]
+
+        names = ttk.Combobox(self.frame)
+        names['values'] = list_name
+        names.grid(padx=2, pady=1)
+
+        button = ttk.Button(self.frame, text="Delete", command=lambda: self.delete_name(names))
+        button.grid()
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
+
+    def delete_name(self, box):
+        name = box.get()
+        query = "DELETE FROM customer WHERE name LIKE ?;"
+        self.execute_query(query, [name])
+        label = ttk.Label(self.frame, text="Deleted Successfully")
+        label.grid()
+        self.delete_cus()
+
+    def delete_ele(self):
+        self.clear_frame()
+        label = ttk.Label(self.frame, text="Select element to delete")
+        label.grid()
+
+        list_ele = self.menu_list()
+        elements = ttk.Combobox(self.frame)
+        elements['values'] = list_ele
+        elements.grid(padx=2, pady=1)
+
+        button = ttk.Button(self.frame, text="Delete", command=lambda: self.delete_from_menu(elements))
+        button.grid()
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
+
+    def delete_from_menu(self, box):
+        elem = box.get()
+        query = "DELETE FROM menu WHERE item LIKE ?;"
+        self.execute_query(query, [elem])
+        label = ttk.Label(self.frame, text="Deleted Successfully")
+        label.grid()
+        self.delete_ele()
+
+    def update_p(self):
+        self.clear_frame()
+        label = ttk.Label(self.frame, text="Select element to update")
+        label.grid()
+
+        list_ele = self.menu_list()
+        elements = ttk.Combobox(self.frame)
+        elements['values'] = list_ele
+        elements.grid(padx=2, pady=1)
+
+        new = tk.IntVar()
+        ttk.Label(self.frame, text="Enter New Price: ").grid(row=1, column=2)
+        ttk.Entry(self.frame, textvariable=new).grid(row=1, column=1)
+        button = ttk.Button(self.frame, text="Update", command=lambda: self.update_price(elements, new))
+        button.grid()
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
+
+    def update_price(self, ele, num):
+        element = ele.get()
+        prices = int(num.get())
+        list1 = [element, prices]
+        query = "UPDATE menu SET price =? WHERE item LIKE ?;"
+        self.execute_query(query, list1)
+        label = ttk.Label(self.frame, text="Update Successful")
+        label.grid()
+        self.update_p()
+    
+    def menu_list(self):
+        query = "SELECT item FROM menu;"
+        menu_items = self.execute_query(query)
+        return [item[0] for item in menu_items]
+
+    def add_menu_item(self):
+        self.clear_frame()
+        name_var = tk.StringVar()
+        ttk.Label(self.frame, text="Enter New Menu Item: ").grid(row=0, column=0)
+        ttk.Entry(self.frame, textvariable=name_var).grid(row=0, column=1)
+        price_var = tk.DoubleVar()
+        ttk.Label(self.frame, text="Enter Price: ").grid(row=1, column=0)
+        ttk.Entry(self.frame, textvariable=price_var).grid(row=1, column=1)
+        ttk.Button(self.frame, text="Add Menu Item", command=lambda: self.add_new_menu_item(name_var, price_var)).grid(row=2, column=0)
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
+
+    def add_new_menu_item(self, name_var, price_var):
+        name = name_var.get()
+        price = price_var.get()
+        if name and price:
+            query = "INSERT INTO menu VALUES (?, ?);"
+            self.execute_query(query, (name, price))
+            label = ttk.Label(self.frame, text="Menu Item Added Successfully")
+            label.grid()
         else:
-            price_list += c.fetchall()
-    quantity = get_quantity(order_id,billist)
-    each_price = []
-    for i in range(0,len(billist)):
-        each_price.append(int(quantity[i])*int(price_list[i][0]))
-    return each_price
+            label = ttk.Label(self.frame, text="Please enter both name and price")
+            label.grid()
 
-def get_total(list_of_prices):
-	total = 0
-	for i in list_of_prices:
-		total += i
-	return total
 
-def clear_frame():
-    for widget in frame.winfo_children():
-        widget.destroy()
-def back():
-    clear_frame()
-    func()
-def get_quan(button):
-    quantity = []
-    for i in range(0,len(list_entry)):
-        quantity.append(int(list_entry[i].get())) #id user not cooperative loop command till valid ineteger
-    orders = []
-    name = entry_name.get()
-    for i in range(0,len(list_order)):
-        orders.append(list_order[i].get())
-    full_list = []
-    order_id = max_orderid()
-    num = len(list_entry)
-    order_id += 1
-    for i in range(0,num):
-        full_list.extend((name,quantity[i],orders[i],order_id))     
-        c.execute("INSERT INTO customer VALUES(?,?,?,?);",full_list)
-        full_list.clear()
-        list_order[i].destroy()
-        list_entry[i].destroy()
-    global input_num
-    input_num += 1
-    quantity.clear()
-    orders.clear()
-    full_list.clear()
-    list_entry.clear()
-    list_order.clear()
-    get_input()
+    def name_to_show(self):
+        self.clear_frame()
+        query = "SELECT DISTINCT name FROM customer;"
+        list1 = self.execute_query(query)
+        names = [item[0] for item in list1]
+
+        item = ttk.Combobox(self.frame)
+        item['values'] = names
+        item.grid(row=0, column=0)
+
+        button = ttk.Button(self.frame, text="Show Receipt", command=lambda: self.show_receipt(item))
+        button.grid(row=2, column=2)
+        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=0, column=6)
+
+    def show_receipt(self, entry):
+        name = entry.get()
+        query = "SELECT DISTINCT order_id FROM customer WHERE name LIKE ?;"
+        query_2 = "SELECT orders FROM customer WHERE name LIKE ?;"
+        orderid_list = self.execute_query(query, [name])
+        food_list = self.execute_query(query_2, [name])
+        total_price = 0
+
+
+        quan_row = 4
+        foo_row = 4
+        price_row = 4
+
+        for i in range(len(orderid_list)):
+
+            query = "SELECT DISTINCT orders FROM customer WHERE order_id LIKE ?;"
+            food = self.execute_query(query, [orderid_list[i][0]])
+            prices = self.get_prices(food_list[i][0])
+            quantity = self.get_quantity(orderid_list[i][0], food)
+            print(quantity)
+            total_price += prices[0]* quantity[0]
         
-def get_all(num_e):
-    label_add.destroy()
-    num = num_e.get()
-    num = int(num)
-    list2 = menu_list()
-    global list_entry
-    global list_order
-    for i in range(0,num):
-        item = ttk.Combobox(frame)
-        item['values'] = list2
-        item.pack(padx=2, pady=1)
-        entry1 = tk.Entry(frame)
-        entry1.pack()
-        list_entry.append(entry1)
-        list_order.append(item)
-    button_num = tk.Button(frame,text="order",command = lambda: get_quan(button_num))
-    button_num.pack()
+            orders_num = str(len(orderid_list))
+            orders_num = orders_num + " Orders"
+            label = ttk.Label(self.frame, text=orders_num)
+            label.grid(row=3, column=3)
 
-def get_input():
-    clear_frame()
-    global entry_name
-    entry_name = tk.Entry(frame,text="Name : ")
-    entry_name.pack()
-    order_num = tk.IntVar()
-    entry_num = tk.Entry(frame,text="How many elements you ordering : ",textvariable =order_num)
-    entry_num.pack()
-    if order_num != 0:
-        global label_add
-        label_add = tk.Label(frame,text="added succefully")
-        label_add.pack()
-    button_num = tk.Button(frame,text="hrtr",command = lambda: get_all(order_num))
-    button_num.pack()
-    button_b = tk.Button(frame,text="back",command=lambda: back())
-    button_b.pack()
+            for j in range(len(quantity)):
+                if j < len(prices):  # Check if j is within the valid range of prices
+                    label1 = ttk.Label(self.frame, text=f"Quantity: {quantity[j]}")
+                    label1.grid(row=quan_row, column=2)
+                    label2 = ttk.Label(self.frame, text=f"Food: {food[j][0]}")
+                    label2.grid(row=foo_row, column=0)
+                    label3 = ttk.Label(self.frame, text=f"Price: {prices[j]}")
+                    label3.grid(row=price_row, column=4)
+                    foo_row += 1
+                    quan_row += 1
+                    price_row += 1
 
+            if i == len(orderid_list) - 1:
+                continue
+            else:
+                label = ttk.Label(self.frame, text="Next Order")
+                label.grid(row=quan_row, column=2)
 
-
-def add_element_data(elem,pric):
-    element = elem.get()
-    price = int(pric.get())
-    list_price = []
-    list_cmp = []
-    j = 0
-    list_price.extend((element,price))
-    c.execute("SELECT item FROM menu;")
-    list_cmp = c.fetchall()
-    for i in range(0,len(list_cmp)):
-        if element == list_cmp[i][0]:
-            label_e = tk.Label(frame,text="This element already exists")
-            label_e.pack()
-            j += 1
-    if j == 0:
-        c.execute("INSERT INTO menu VALUES(?,?);",list_price)
-        label_d = tk.Label(frame,text="Added Succefully")
-        label_d.pack()
-    list_price.clear()
-
-def add_element():
-    clear_frame()
-    element = tk.StringVar()
-    entry_element = tk.Entry(frame,text="Element : ",textvariable=element)
-    entry_element.pack()
-    price = tk.IntVar()
-    entry_price = tk.Entry(frame,text="price : ",textvariable =price)
-    entry_price.pack()
-    button_num = tk.Button(frame,text="element",command = lambda: add_element_data(element,price))
-    button_num.pack()
-    button_b = tk.Button(frame,text="back",command=lambda: back())
-    button_b.pack()
-    
-
-
-
-def delete_name(box):
-    name = box.get()
-    c.execute("DELETE FROM customer WHERE name LIKE ?;",[name])
-    label = tk.Label(frame,text="deleted succefully")
-    label.pack()
-    delete_cus()
-
-def delete_cus():
-    clear_frame()
-    label = tk.Label(frame,text="select customer to delete")
-    label.pack()
-    c.execute("SELECT DISTINCT name FROM customer;")
-    list_n = c.fetchall()
-    list_name = []
-    for i in range(len(list_n)):
-        list_name.append(list_n[i][0])
-    names = ttk.Combobox(frame)
-    names['values'] = list_name
-    names.pack(padx=2, pady=1)
-    button = tk.Button(frame,text="delete",command=lambda: delete_name(names))
-    button.pack()
-    button_b = tk.Button(frame,text="back",command=lambda: back())
-    button_b.pack()
-
-
-
-def delete_from_menu(box):
-    elem = box.get()
-    c.execute("DELETE FROM menu WHERE item LIKE ?;",[elem])
-    label = tk.Label(frame,text="deleted succefully")
-    label.pack()
-    delete_ele()
-
-def delete_ele():
-    clear_frame()
-    label = tk.Label(frame,text="select element to delete")
-    label.pack()
-    list_ele = menu_list()
-    elements = ttk.Combobox(frame)
-    elements['values'] = list_ele
-    elements.pack(padx=2, pady=1)
-    button = tk.Button(frame,text="delete",command=lambda: delete_from_menu(elements))
-    button.pack()
-    button_b = tk.Button(frame,text="back",command=lambda: back())
-    button_b.pack()
-
-
-
-def update_price(ele,num):
-    element = ele.get()
-    prices = int(num.get())
-    list1 = []
-    list1.extend((element,prices))
-    c.execute("UPDATE menu SET price =? WHERE item LIKE ?;",list1)
-    list1.clear()
-    label = tk.Label(frame,text="update succefully")
-    label.pack()
-    update_p()
-
-def update_p():
-    clear_frame()
-    label = tk.Label(frame,text="select element to update")
-    label.pack()
-    list_ele = menu_list()
-    elements = ttk.Combobox(frame)
-    elements['values'] = list_ele
-    elements.pack(padx=2, pady=1)
-    new = tk.IntVar()
-    new_price = tk.Entry(frame,textvariable=new)
-    new_price.pack()
-    button = tk.Button(frame,text="update",command=lambda: update_price(elements,new))
-    button.pack()
-    button_b = tk.Button(frame,text="back",command=lambda: back())
-    button_b.pack()
-
-    
-
-def show_receipt(entry):
-    name = entry.get()
-    c.execute("SELECT DISTINCT order_id FROM customer WHERE name LIKE ?;",[name])
-    orderid_list = c.fetchall()
-    quan_row = 4
-    c.execute("SELECT orders FROM customer WHERE order_id LIKE '5'")
-    list222 = c.fetchall()
-    foo_row = 4
-    price_row = 4
-    for i in range(0,len(orderid_list)):
-        prices = get_prices(orderid_list[i][0])
-        c.execute("SELECT DISTINCT orders FROM customer WHERE order_id LIKE ?",[orderid_list[i][0]])
-        food = c.fetchall()
-        total_price = get_total(prices)
-        quantity = get_quantity(orderid_list[i][0],food)
-        orders_num = str(len(orderid_list))
-        orders_num = orders_num + "Orders"
-        label = tk.Label(frame,text=orders_num)
-        label.grid(row = 3,column=3)
-        for j in range(0,len(quantity)):
-            label1 = tk.Label(frame,text=quantity[j])
-            label1.grid(row=quan_row,column=2)
-            label2 = tk.Label(frame,text=food[j][0])
-            label2.grid(row=foo_row,column=0)
-            label3 = tk.Label(frame,text=prices[j])
-            label3.grid(row=price_row,column=4)
             foo_row += 1
             quan_row += 1
             price_row += 1
-        label3 = tk.Label(frame,textvariable=total_price)
-        label3.grid(row=6,column=3)
-        if i == len(orderid_list) - 1:
-            continue
-        else:
-            label = tk.Label(frame,text="new order")
-            label.grid(row = quan_row,column=3)
-        foo_row += 1
-        quan_row += 1
-        price_row += 1
-        prices.clear()
-        food.clear()
-        quantity.clear()
-
-def name_to_show():
-    clear_frame()
-    c.execute("SELECT DISTINCT name FROM customer;")
-    list1 = c.fetchall()
-    names = []
-    for i in range(len(list1)):
-        names.append(list1[i][0])
-    item = ttk.Combobox(frame)
-    item['values'] = names
-    item.grid(row=0, column=0)
-    button = tk.Button(frame,text="show receipt",command=lambda: show_receipt(item))
-    button.grid(row=2,column=2)
-    button_b = tk.Button(frame,text="back",command=lambda: back())
-    button_b.grid(row = 0,column=6)
+            prices.clear()
+            food.clear()
+            quantity.clear()
+        label3 = ttk.Label(self.frame, text=f"Total Price: {total_price}")
+        label3.grid()
 
 
+    def get_prices(self, food):
+        query = "SELECT DISTINCT price FROM menu WHERE item LIKE ?;"
+        prices = self.execute_query(query, [food])
+        return [price[0] for price in prices]
 
+    def get_total(self, prices):
+        total = sum(prices)
+        return f"Total: {total}"
 
+    def get_quantity(self, order_id, food):
+        query = "SELECT DISTINCT quantity FROM customer WHERE order_id LIKE ?;"
+        quantities = self.execute_query(query, [order_id])
+        return [quantity[0] for quantity in quantities]
 
-
-
-
-
-
-
-root = tk.Tk()
-canvas = tk.Canvas(root,width=800,height=100)
-canvas.grid()
-frame = tk.Frame(root,width=500,height=500)
-frame.grid()
-def func():
-    clear_frame()
-    button = tk.Button(frame,text="choose",command=lambda: get_input())
-    button.grid(row=0,column=3,sticky='e')
-    label1 = tk.Label(frame,text="1-Add a customer")
-    label1.grid(row=0,column=0,sticky='w')
-
-    button = tk.Button(frame,text="choose",command=lambda: add_element())
-    button.grid(row=5,column=3,sticky='e')
-    label1 = tk.Label(frame,text="2-Add an element")
-    label1.grid(row=5,column=0,sticky='w')
-
-    button = tk.Button(frame,text="choose",command=lambda: delete_cus())
-    button.grid(row=10,column=3,sticky='e')
-    label1 = tk.Label(frame,text="3-delete cus")
-    label1.grid(row=10,column=0,sticky='w')
-
-    button = tk.Button(frame,text="choose",command=lambda: delete_ele())
-    button.grid(row=15,column=3,sticky='e')
-    label1 = tk.Label(frame,text="4-delete eleme")
-    label1.grid(row=15,column=0,sticky='w')
-
-    button = tk.Button(frame,text="choose",command=lambda: update_p())
-    button.grid(row=20,column=3,sticky='e')
-    label1 = tk.Label(frame,text="5-update the price")
-    label1.grid(row=20,column=0,sticky='w')
-
-    button = tk.Button(frame,text="choose",command=lambda: name_to_show())
-    button.grid(row=25,column=3,sticky='e')
-    label1 = tk.Label(frame,text="6- Get a customer's receipt")
-    label1.grid(row=25,column=0,sticky='w')
+    def max_orderid(self):
+        query = "SELECT MAX(order_id) FROM customer;"
+        max_order_id = self.execute_query(query)
+        return max_order_id[0][0] if max_order_id[0][0] else 0
     
 
-func()
-root.mainloop()
-conn.commit()
-conn.close()
+    
+
+if __name__ == "__main__":
+    app = RestaurantManagementSystem()
+    app.run()
