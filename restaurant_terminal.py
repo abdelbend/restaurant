@@ -199,7 +199,6 @@ def all_receipts():
     names = c.fetchall()
     for i in range(0,len(names)):
         generate_receipt(names[i][0])
-        print()
 
 def main():
     while True:
