@@ -14,10 +14,10 @@ try:
 
         # creates a customer table name and order and quantity of each order
         c.execute("""CREATE TABLE IF NOT EXISTS customer (
-                order_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
                 quantity INTEGER,
-                orders TEXT
+                orders TEXT,
+                order_id INTEGER
             )""")
 except Exception as e:
     print(f"Error creating tables: {e}")
