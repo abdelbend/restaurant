@@ -3,7 +3,6 @@ import sqlite3
 from datetime import date
 import sys
 
-#creates a database
 conn = sqlite3.connect('restaurant.db')
 c = conn.cursor()
 #create a manu table of elements name and price
@@ -46,7 +45,7 @@ def max_orderid():
 
 
 #check if the name enterd match a menus element if not loop
-def check_inmenu(item,tex):
+def check_inmenu(tex):
     check = []
     while(len(check) < 1):
         item = input(tex)
@@ -54,6 +53,7 @@ def check_inmenu(item,tex):
         check = c.fetchall()
         if len(check) < 1:
             print("\n\t\tThis element is not found in the menu\n")
+    return item
 
 
 #add a person into the customer table in the database
@@ -68,11 +68,10 @@ def add_person():
         order_num = error_int(orders_input)
         for j in range(0,order_num):
             inp = "Enter order :"
-            orderf = ""
-            check_inmenu(orderf,inp)
+            orderf = check_inmenu(inp)
             quan_input = "How many : "
             quan = error_int(quan_input)
-            orlist.extend((namp,quan,orderf,order_id))                     #insert into table 
+            orlist.extend((namp,quan,orderf,order_id))    
             c.execute("INSERT INTO customer VALUES(?,?,?,?);",orlist)
             orlist.clear()
         order_id += 1
@@ -98,14 +97,15 @@ def delete_customer(name):
 
 
 #checks if name is in the database
-def check_name(name,inp):
+def check_name(inp):
     listf = []
     while len(listf) < 1:
         name = input(inp)
         c.execute("SELECT name FROM customer WHERE name LIKE ?",[name])
         listf = c.fetchall()
         if len(listf) < 1:
-            print("\n\t\tThere's no customer with the given name\n")		
+            print("\n\t\tThere's no customer with the given name\n")
+    return name		
 
 
 #deletes element from teh menu takes the element name as argument
@@ -123,26 +123,21 @@ def updateprice_menu(nam,new):
 
 #get the prices of each order of a customer takes customers name as argument
 def get_prices(order_id):
-    c.execute("SELECT orders FROM customer WHERE order_id =?;", [order_id])
-    billist = c.fetchall()
-    for i in range(0,len(billist)):
-        c.execute("SELECT price FROM menu WHERE item LIKE ?",(billist[i][0],))
-        if i == 0:
-            price_list = c.fetchall()
-        else:
-            price_list += c.fetchall()
-    c.execute("SELECT quantity FROM customer WHERE order_id =?;", [order_id])
-    quan = c.fetchall()
-    each_price = []
-    total = 0
-    for i in range(len(billist)):
-        c.execute("SELECT price FROM menu WHERE item LIKE ?;", (billist[i][0],))
-        price = c.fetchone()
-        if price is not None:
-            price_list.append(price[0])
-        else:
-            print(f"Price not found for item: {billist[i][0]}")
-    return each_price
+	c.execute("SELECT orders FROM customer WHERE order_id =?;", [order_id])
+	billist = c.fetchall()
+	for i in range(0,len(billist)):
+		c.execute("SELECT price FROM menu WHERE item LIKE ?",(billist[i][0],))
+		if i == 0:
+			price_list = c.fetchall()
+		else:
+			price_list += c.fetchall()
+	c.execute("SELECT quantity FROM customer WHERE order_id =?;", [order_id])
+	quan = c.fetchall()
+	each_price = []
+	total = 0
+	for i in range(0,len(billist)):
+		each_price.append(int(quan[i][0])*int(price_list[i][0]))
+	return each_price
 
 
 #total of a customer purchase takes the list of all orders
@@ -186,8 +181,8 @@ def generate_receipt(name):
         print(f"\tFor {name.upper()}",end="\t\t ")
         print(f" Date :{date.today()}")
         print("\t------------------------------------------")
-        for i in range(0,len(food)):
-            print(f"\t{quantity[i][0]} x {food[i][0]}\t\t\t{prices[i]}")
+        for j in range(0,len(food)):
+            print(f"\t{quantity[j][0]} x {food[j][0]}\t\t\t{prices[j]}")
         print("\t------------------------------------------")
         print("\t------------------------------------------")
         print(f"\tTotal Amount\t\t\t{total_price}")
@@ -196,16 +191,10 @@ def generate_receipt(name):
         prices.clear()
         food.clear()
         quantity.clear()
-
-def goto_first():
-    an = input("Do you want to do another operation ?\ny/yes or n/no : ")
-    list1 = ["y","yes"]
-    for i in list1:
-        if an.lower() == i:
-            main()
+    
 
 #generates receipts of all customers
-def all_receipts():
+def all_receipts(): 
     c.execute("SELECT DISTINCT name FROM customer")
     names = c.fetchall()
     for i in range(0,len(names)):
@@ -213,71 +202,74 @@ def all_receipts():
         print()
 
 def main():
-    print("\t******************************************")
-    print("\t\t     List of commands")
-    print("\t******************************************")
-    print("\t*\t1- Add customer")
-    print("\t******************************************")
-    print("\t*\t2- Add an element to the menu")
-    print("\t******************************************")
-    print("\t*\t3- Delete Customer")
-    print("\t******************************************")
-    print("\t*\t4- Delete element from the menu")
-    print("\t******************************************")
-    print("\t*\t5- Update the price of an element")
-    print("\t******************************************")
-    print("\t*\t6- Get a customer's receipt")
-    print("\t******************************************")
-    print("\t*\t7- Show all receipts")
-    print("\t******************************************")
-    print("\t*\t8- Show the menu")
-    print("\t******************************************")
+    while True:
+        print("\t******************************************")
+        print("\t\t     List of commands")
+        print("\t******************************************")
+        print("\t*\t1- Add customer")
+        print("\t******************************************")
+        print("\t*\t2- Add an element to the menu")
+        print("\t******************************************")
+        print("\t*\t3- Delete Customer")
+        print("\t******************************************")
+        print("\t*\t4- Delete element from the menu")
+        print("\t******************************************")
+        print("\t*\t5- Update the price of an element")
+        print("\t******************************************")
+        print("\t*\t6- Get a customer's receipt")
+        print("\t******************************************")
+        print("\t*\t7- Show all receipts")
+        print("\t******************************************")
+        print("\t*\t8- Show the menu")
+        print("\t******************************************")
 
-    command = "\n\tEnter a command : "
-    choice = error_int(command)
-    if choice == 1:
-        add_person()
-    
-    elif choice == 2:
-        add_to_menu()
+        command = "\n\tEnter a command : "
+        choice = error_int(command)
+        if choice == 1:
+            add_person()
+            conn.commit()
+        
+        elif choice == 2:
+            add_to_menu()
+            conn.commit()
 
-    elif choice == 3:
-        del_inp = "Enter the customer to delete : "
-        name =""
-        check_name(name,del_inp)
-        delete_customer(name)
-    
+        elif choice == 3:
+            del_inp = "Enter the customer to delete : "
+            name = check_name(del_inp)
+            delete_customer(name)
+            conn.commit()
+        
 
-    elif choice == 4:
-        dele_inp = "Enter element to delete : "
-        item = ""
-        check_inmenu(item,dele_inp)		
-        deletefrom_menu(item)
-    elif choice == 5:
-        inp = "Enter element's name : "
-        nam = ""
-        check_inmenu(nam,inp)
-        price_inp = "Enter the new price : "
-        price = error_int(price_inp)
-        updateprice_menu(nam,price)
+        elif choice == 4:
+            dele_inp = "Enter element to delete : "
+            item = check_inmenu(dele_inp)		
+            deletefrom_menu(item)
+        elif choice == 5:
+            inp = "Enter element's name : "
+            nam = check_inmenu(inp)
+            price_inp = "Enter the new price : "
+            price = error_int(price_inp)
+            updateprice_menu(nam,price)
+            conn.commit()
 
-    elif choice == 6:
-        cus_inp = "Enter a customer's name : "
-        custom =""
-        check_name(custom,cus_inp)
-        generate_receipt(custom)
 
-    elif choice == 7:
-        all_receipts()
-    elif choice == 8:
-        show_menu()
+        elif choice == 6:
+            cus_inp = "Enter a customer's name : "
+            custom = check_name(cus_inp)
+            generate_receipt(custom)
 
-    else:
-        print(f"Check the list of commands no {choice} found")
+        elif choice == 7:
+            all_receipts()
+        elif choice == 8:
+            show_menu()
 
-    goto_first()
-    conn.commit()
-    conn.close()
+        else:
+            print(f"Check the list of commands no {choice} found")
+        an = input("Do you want to do another operation ?\ny/yes or n/no : ")
+        if an.lower() == 'n' or an.lower() == 'no':
+            conn.close()
+            break
+
 
 
 if __name__ == '__main__':
