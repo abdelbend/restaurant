@@ -4,24 +4,29 @@ import sqlite3
 
 class RestaurantManagementSystem:
     def __init__(self):
+        # Initialize the GUI
         self.root = tk.Tk()
         self.root.title("Restaurant Management System v1.0")
         self.root.geometry("600x400")
 
+        # Configure the style for ttk widgets
         self.style = ttk.Style()
         self.style.configure("TButton", padding=5, relief="flat", foreground="white", background="#007BFF")
         self.style.configure("TLabel", padding=5, font=('Arial', 12))
         self.style.configure("TCombobox", padding=5, font=('Arial', 12))
 
+        # Create widgets and connect to the database
         self.create_widgets()
         self.connect_to_database()
 
     def run(self):
+        # Run the GUI main loop and commit changes to the database on exit
         self.root.mainloop()
         self.conn.commit()
         self.conn.close()
 
     def connect_to_database(self):
+        # Connect to the SQLite database and create necessary tables
         try:
             self.conn = sqlite3.connect('restaurant.db')
             self.cursor = self.conn.cursor()
@@ -30,6 +35,7 @@ class RestaurantManagementSystem:
             print(f"Error connecting to database: {e}")
 
     def create_tables(self):
+        # Create database tables if they do not exist
         try:
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS menu (
@@ -49,26 +55,30 @@ class RestaurantManagementSystem:
             print(f"Error creating tables: {e}")
 
     def create_widgets(self):
+        # Create the main GUI widgets
         self.frame = ttk.Frame(self.root, padding="20")
         self.frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         ttk.Label(self.frame, text="Restaurant Management System", style="TLabel").grid(row=0, column=0, columnspan=2, pady=10)
+        
+        # Define menu options and corresponding functions
         options = [
             ("Add a Customer", self.get_input),
-            ("Add an Element", self.add_element),  # Corrected
+            ("Add an Element", self.add_element),
             ("Delete Customer", self.delete_cus),
             ("Delete Element", self.delete_ele),
             ("Update the Price", self.update_p),
             ("Get a Customer's Receipt", self.name_to_show)
         ]
 
+        # Create buttons for each menu option
         row_counter = 1
         for text, command in options:
             ttk.Button(self.frame, text=text, command=command, style="TButton").grid(row=row_counter, column=0, pady=5, sticky=tk.W)
             row_counter += 1
 
-
     def execute_query(self, query, parameters=None):
+        # Execute an SQL query and return the result
         try:
             if parameters:
                 self.cursor.execute(query, parameters)
@@ -80,12 +90,12 @@ class RestaurantManagementSystem:
             return []
 
     def clear_frame(self):
+        # Clear all widgets in the main frame
         for widget in self.frame.winfo_children():
             widget.destroy()
 
-    # ... (previous code remains unchanged)
-
     def get_input(self):
+        # Function to get customer input for placing an order
         self.clear_frame()
         ttk.Label(self.frame, text="Enter Customer Name: ").grid(row=0, column=0)
         name_var = tk.StringVar()
@@ -97,6 +107,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
 
     def get_all(self, name_var, num_e):
+        # Function to get details of multiple items in an order
         self.clear_frame()
         label_add = ttk.Label(self.frame, text="Added Successfully")
         label_add.grid(row=0, column=0)
@@ -110,6 +121,7 @@ class RestaurantManagementSystem:
         list_order = []
 
         for i in range(0, num):
+            # Create dropdowns for menu items and entry fields for quantities
             item = ttk.Combobox(self.frame)
             item['values'] = list2
             item.grid(padx=2, pady=1)
@@ -122,6 +134,7 @@ class RestaurantManagementSystem:
         button_num.grid()
 
     def add_element(self):
+        # Function to add a new element (menu item)
         self.clear_frame()
         element = tk.StringVar()
         ttk.Label(self.frame, text="Enter Element Name: ").grid(row=0, column=0)
@@ -133,6 +146,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
 
     def add_element_data(self, elem, pric):
+        # Function to add data for a new element to the database
         element = elem.get()
         price = int(pric.get())
         list_price = []
@@ -155,6 +169,7 @@ class RestaurantManagementSystem:
         label_d.grid()
 
     def get_quan(self, name, button, list_entry, list_order):
+        # Function to get quantities and process the customer's order
         quantity = [int(entry.get()) for entry in list_entry]
 
         orders = [order.get() for order in list_order]
@@ -172,41 +187,8 @@ class RestaurantManagementSystem:
 
         self.create_widgets()
 
-
-    def add_element(self):
-        self.clear_frame()
-        element = tk.StringVar()
-        ttk.Label(self.frame, text="Enter Element Name: ").grid(row=0, column=0)
-        ttk.Entry(self.frame, textvariable=element).grid(row=0, column=1)
-        price = tk.IntVar()
-        ttk.Label(self.frame, text="Enter Price: ").grid(row=1, column=0)
-        ttk.Entry(self.frame, textvariable=price).grid(row=1, column=1)
-        ttk.Button(self.frame, text="Add Element", command=lambda: self.add_element_data(element, price)).grid(row=2, column=0)
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
-
-    def add_element_data(self, elem, pric):
-        element = elem.get()
-        price = int(pric.get())
-        list_price = []
-        list_cmp = []
-
-        list_price.extend((element, price))
-        query = "SELECT item FROM menu;"
-        list_cmp = self.execute_query(query)
-
-        for i in range(len(list_cmp)):
-            if element == list_cmp[i][0]:
-                label_e = ttk.Label(self.frame, text="This element already exists")
-                label_e.grid()
-                return
-
-        query = "INSERT INTO menu VALUES(?,?);"
-        self.execute_query(query, list_price)
-
-        label_d = ttk.Label(self.frame, text="Added Successfully")
-        label_d.grid()
-
     def delete_cus(self):
+        # Function to delete a customer's record
         self.clear_frame()
         label = ttk.Label(self.frame, text="Select customer to delete")
         label.grid()
@@ -224,6 +206,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
 
     def delete_name(self, box):
+        # Function to delete a customer's record based on name
         name = box.get()
         query = "DELETE FROM customer WHERE name LIKE ?;"
         self.execute_query(query, [name])
@@ -232,6 +215,7 @@ class RestaurantManagementSystem:
         self.delete_cus()
 
     def delete_ele(self):
+        # Function to delete a menu element
         self.clear_frame()
         label = ttk.Label(self.frame, text="Select element to delete")
         label.grid()
@@ -246,6 +230,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
 
     def delete_from_menu(self, box):
+        # Function to delete a menu element based on item name
         elem = box.get()
         query = "DELETE FROM menu WHERE item LIKE ?;"
         self.execute_query(query, [elem])
@@ -254,6 +239,7 @@ class RestaurantManagementSystem:
         self.delete_ele()
 
     def update_p(self):
+        # Function to update the price of a menu element
         self.clear_frame()
         label = ttk.Label(self.frame, text="Select element to update")
         label.grid()
@@ -271,6 +257,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
 
     def update_price(self, ele, num):
+        # Function to update the price of a menu element in the database
         element = ele.get()
         prices = int(num.get())
         list1 = [element, prices]
@@ -281,11 +268,13 @@ class RestaurantManagementSystem:
         self.update_p()
     
     def menu_list(self):
+        # Function to retrieve the list of menu items from the database
         query = "SELECT item FROM menu;"
         menu_items = self.execute_query(query)
         return [item[0] for item in menu_items]
 
     def add_menu_item(self):
+        # Function to add a new menu item to the database
         self.clear_frame()
         name_var = tk.StringVar()
         ttk.Label(self.frame, text="Enter New Menu Item: ").grid(row=0, column=0)
@@ -297,6 +286,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
 
     def add_new_menu_item(self, name_var, price_var):
+        # Function to add a new menu item to the database
         name = name_var.get()
         price = price_var.get()
         if name and price:
@@ -308,8 +298,8 @@ class RestaurantManagementSystem:
             label = ttk.Label(self.frame, text="Please enter both name and price")
             label.grid()
 
-
     def name_to_show(self):
+        # Function to display a customer's receipt
         self.clear_frame()
         query = "SELECT DISTINCT name FROM customer;"
         list1 = self.execute_query(query)
@@ -324,6 +314,7 @@ class RestaurantManagementSystem:
         ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=0, column=6)
 
     def show_receipt(self, entry):
+        # Function to display a customer's receipt with details of their orders
         name = entry.get()
         query = "SELECT DISTINCT order_id FROM customer WHERE name LIKE ?;"
         query_2 = "SELECT orders FROM customer WHERE name LIKE ?;"
@@ -342,7 +333,6 @@ class RestaurantManagementSystem:
             food = self.execute_query(query, [orderid_list[i][0]])
             prices = self.get_prices(food_list[i][0])
             quantity = self.get_quantity(orderid_list[i][0], food)
-            print(quantity)
             total_price += prices[0]* quantity[0]
         
             orders_num = str(len(orderid_list))
