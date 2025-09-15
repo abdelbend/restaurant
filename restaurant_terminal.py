@@ -2,25 +2,13 @@
 import sqlite3
 from datetime import date
 import sys
+from db import create_connection, init_db, seed_menu_if_empty
 
-conn = sqlite3.connect('restaurant.db')
+# Initialize database and seed with a starter menu if empty
+conn = create_connection()
 c = conn.cursor()
-#create a manu table of elements name and price
-try:
-        c.execute("""CREATE TABLE IF NOT EXISTS menu (
-                item TEXT PRIMARY KEY,
-                price INTEGER
-            ) """)
-
-        # creates a customer table name and order and quantity of each order
-        c.execute("""CREATE TABLE IF NOT EXISTS customer (
-                name TEXT,
-                quantity INTEGER,
-                orders TEXT,
-                order_id INTEGER
-            )""")
-except Exception as e:
-    print(f"Error creating tables: {e}")
+init_db(conn)
+seed_menu_if_empty(conn)
 #id user not cooperative loop command till valid ineteger
 def error_int(text):
     while True:
@@ -49,7 +37,7 @@ def check_inmenu(tex):
     check = []
     while(len(check) < 1):
         item = input(tex)
-        c.execute("SELECT item FROM menu WHERE item LIKE ?;",[item]) 
+        c.execute("SELECT item FROM menu WHERE item = ?;", [item])
         check = c.fetchall()
         if len(check) < 1:
             print("\n\t\tThis element is not found in the menu\n")
@@ -88,12 +76,18 @@ def add_to_menu():
         temp = input("Enter name of the element : ")
         menutemp_input = "Enter Price : "
         menu[temp] = error_int(menutemp_input)
-        list1.extend((temp,menu[temp]))
-        c.execute("INSERT INTO menu VALUES(?,?);",list1)
-        list1.clear()
+        try:
+            list1.extend((temp, menu[temp]))
+            c.execute("INSERT INTO menu(item, price) VALUES(?, ?);", list1)
+            print(f"Added '{temp}' to menu.")
+        except sqlite3.IntegrityError:
+            print(f"Item '{temp}' already exists. Updating price instead.")
+            c.execute("UPDATE menu SET price = ? WHERE item = ?;", (menu[temp], temp))
+        finally:
+            list1.clear()
 #delete a customer from the table takes the name as argument
 def delete_customer(name):
-    c.execute("DELETE FROM customer WHERE name LIKE ?",[name])
+    c.execute("DELETE FROM customer WHERE name = ?", [name])
 
 
 #checks if name is in the database
@@ -101,7 +95,7 @@ def check_name(inp):
     listf = []
     while len(listf) < 1:
         name = input(inp)
-        c.execute("SELECT name FROM customer WHERE name LIKE ?",[name])
+        c.execute("SELECT name FROM customer WHERE name = ?", [name])
         listf = c.fetchall()
         if len(listf) < 1:
             print("\n\t\tThere's no customer with the given name\n")
@@ -110,34 +104,29 @@ def check_name(inp):
 
 #deletes element from teh menu takes the element name as argument
 def deletefrom_menu(ele):
-    c.execute("DELETE FROM menu WHERE item LIKE ?",[ele])
+    c.execute("DELETE FROM menu WHERE item = ?", [ele])
 
 
 #updates an element price takes name and new price as arguemnt
 def updateprice_menu(nam,new):
     tmplist = []
-    tmplist.extend((int(new),nam))
-    c.execute("UPDATE menu SET price =? WHERE item LIKE ?;",tmplist)
+    tmplist.extend((int(new), nam))
+    c.execute("UPDATE menu SET price = ? WHERE item = ?;", tmplist)
     tmplist.clear()
 
 
 #get the prices of each order of a customer takes customers name as argument
 def get_prices(order_id):
-	c.execute("SELECT orders FROM customer WHERE order_id =?;", [order_id])
-	billist = c.fetchall()
-	for i in range(0,len(billist)):
-		c.execute("SELECT price FROM menu WHERE item LIKE ?",(billist[i][0],))
-		if i == 0:
-			price_list = c.fetchall()
-		else:
-			price_list += c.fetchall()
-	c.execute("SELECT quantity FROM customer WHERE order_id =?;", [order_id])
-	quan = c.fetchall()
-	each_price = []
-	total = 0
-	for i in range(0,len(billist)):
-		each_price.append(int(quan[i][0])*int(price_list[i][0]))
-	return each_price
+    # Return per-line totals for a given order_id
+    c.execute("SELECT orders, quantity FROM customer WHERE order_id = ?;", [order_id])
+    rows = c.fetchall()
+    each_price = []
+    for orders, quantity in rows:
+        c.execute("SELECT price FROM menu WHERE item = ?;", (orders,))
+        price_row = c.fetchone()
+        price = int(price_row[0]) if price_row else 0
+        each_price.append(int(quantity) * price)
+    return each_price
 
 
 #total of a customer purchase takes the list of all orders
@@ -148,7 +137,7 @@ def get_total(list_of_prices):
     return total
 
 def show_menu():
-    c.execute("SELECT item,price FROM menu;")
+    c.execute("SELECT item, price FROM menu;")
     menu = c.fetchall()
     print("\n\tITEMS\t\t\t\tPRICES")
     print("\t******************************************")
@@ -161,7 +150,7 @@ def show_menu():
 
 #generates a recipt for a customer takes name as argument
 def generate_receipt(name):
-    c.execute("SELECT DISTINCT order_id FROM customer WHERE name LIKE ?",[name])
+    c.execute("SELECT DISTINCT order_id FROM customer WHERE name = ?", [name])
     order_id = c.fetchall()
     name = name.upper()
     s = ""
@@ -170,10 +159,10 @@ def generate_receipt(name):
     print(f"\t\t   {name} HAS {len(order_id)} ORDER{s} :\n")
     for i in range(0,len(order_id)):
         prices = get_prices(order_id[i][0])
-        c.execute("SELECT orders FROM customer WHERE order_id LIKE ?",[order_id[i][0]])
+        c.execute("SELECT orders FROM customer WHERE order_id = ?", [order_id[i][0]])
         food = c.fetchall()
         total_price = get_total(prices)
-        c.execute("SELECT quantity FROM customer WHERE order_id LIKE ?",[order_id[i][0]])
+        c.execute("SELECT quantity FROM customer WHERE order_id = ?", [order_id[i][0]])
         quantity = c.fetchall()
         print("\t******************************************")
         print("\t\t\tReceipt")
@@ -241,8 +230,9 @@ def main():
 
         elif choice == 4:
             dele_inp = "Enter element to delete : "
-            item = check_inmenu(dele_inp)		
+            item = check_inmenu(dele_inp)
             deletefrom_menu(item)
+            conn.commit()
         elif choice == 5:
             inp = "Enter element's name : "
             nam = check_inmenu(inp)

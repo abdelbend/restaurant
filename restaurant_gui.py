@@ -1,394 +1,709 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import sqlite3
+from db import create_connection, init_db, seed_menu_if_empty
+
+# -----------------------------
+# Small UI helpers
+# -----------------------------
+
+
+class ToolTip:
+    """Very small tooltip helper for ttk widgets."""
+
+    def __init__(self, widget, text, delay=600):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self._id = None
+        self.tip = None
+        widget.bind("<Enter>", self._schedule)
+        widget.bind("<Leave>", self._hide)
+
+    def _schedule(self, _):
+        self._id = self.widget.after(self.delay, self._show)
+
+    def _show(self):
+        if self.tip is not None:
+            return
+        x, y, cx, cy = self.widget.bbox("insert") or (0, 0, 0, 0)
+        x += self.widget.winfo_rootx() + 20
+        y += self.widget.winfo_rooty() + 30
+        self.tip = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        frame = ttk.Frame(tw, style="Tooltip.TFrame", padding=(8, 5))
+        frame.pack()
+        lbl = ttk.Label(frame, text=self.text, style="Tooltip.TLabel")
+        lbl.pack()
+
+    def _hide(self, _):
+        if self._id:
+            self.widget.after_cancel(self._id)
+            self._id = None
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
 
 class RestaurantManagementSystem:
     def __init__(self):
-        # Initialize the GUI
+        # -----------------------------
+        # Root window
+        # -----------------------------
         self.root = tk.Tk()
-        self.root.title("Restaurant Management System v1.0")
-        self.root.geometry("600x400")
+        self.root.title("Restaurant Management System · v1.1")
+        self.root.geometry("1024x640")
+        self.root.minsize(920, 560)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure(1, weight=1)
 
-        # Configure the style for ttk widgets
+        # -----------------------------
+        # Styling (clean, professional, subtle accent)
+        # -----------------------------
         self.style = ttk.Style()
-        self.style.configure("TButton", padding=5, relief="flat", foreground="white", background="#007BFF")
-        self.style.configure("TLabel", padding=5, font=('Arial', 12))
-        self.style.configure("TCombobox", padding=5, font=('Arial', 12))
+        try:
+            self.style.theme_use("clam")  # stable, skinnable theme
+        except Exception:
+            pass
 
-        # Create widgets and connect to the database
-        self.create_widgets()
+        # Palette
+        self.COLOR_BG = "#0f172a"  # slate-900 header
+        self.COLOR_CARD = "#ffffff"  # cards
+        self.COLOR_ACCENT = "#2563eb"  # blue-600
+        self.COLOR_ACCENT_DK = "#1e40af"  # blue-800
+        self.COLOR_MUTED = "#64748b"  # slate-500
+        self.COLOR_BORDER = "#e2e8f0"  # slate-200
+        self.ROW_ALT = "#f8fafc"  # slate-50
+
+        base_font = ("Segoe UI", 11)
+        self.style.configure("TLabel", font=base_font, padding=2)
+        self.style.configure("TButton", font=base_font, padding=(12, 8))
+        self.style.configure("TEntry", padding=4)
+        self.style.configure("TCombobox", padding=4)
+        self.style.configure("Header.TLabel", font=(
+            "Segoe UI Semibold", 20), foreground="#ffffff", background=self.COLOR_BG)
+        self.style.configure("SubHeader.TLabel", font=(
+            "Segoe UI", 12), foreground="#cbd5e1", background=self.COLOR_BG)
+        self.style.configure("Toolbar.TFrame", background="#ffffff")
+        self.style.configure(
+            "Card.TLabelframe", background=self.COLOR_CARD, relief="solid", borderwidth=1)
+        self.style.configure("Card.TLabelframe.Label", font=(
+            "Segoe UI Semibold", 12), foreground="#0f172a")
+        self.style.configure("Status.TLabel", anchor="w", padding=(12, 8))
+
+        # Buttons (primary / danger / ghost)
+        self.style.configure(
+            "Primary.TButton", background=self.COLOR_ACCENT, foreground="#ffffff")
+        self.style.map(
+            "Primary.TButton",
+            background=[("active", self.COLOR_ACCENT_DK),
+                        ("pressed", self.COLOR_ACCENT_DK)],
+            foreground=[("disabled", "#cbd5e1")],
+        )
+        self.style.configure(
+            "Danger.TButton", background="#dc2626", foreground="#ffffff")
+        self.style.map(
+            "Danger.TButton",
+            background=[("active", "#b91c1c"), ("pressed", "#b91c1c")],
+        )
+        self.style.configure(
+            "Ghost.TButton", background="#ffffff", foreground="#0f172a")
+
+        # Treeview polish
+        self.style.configure(
+            "Treeview",
+            rowheight=28,
+            bordercolor=self.COLOR_BORDER,
+            lightcolor=self.COLOR_BORDER,
+            darkcolor=self.COLOR_BORDER,
+        )
+        self.style.configure("Treeview.Heading",
+                             font=("Segoe UI Semibold", 11))
+
+        # Tooltip style
+        self.style.configure(
+            "Tooltip.TFrame", background="#111827", borderwidth=0)
+        self.style.configure("Tooltip.TLabel", background="#111827",
+                             foreground="#f9fafb", font=("Segoe UI", 10))
+
+        # -----------------------------
+        # DB
+        # -----------------------------
         self.connect_to_database()
 
-    def run(self):
-        # Run the GUI main loop and commit changes to the database on exit
-        self.root.mainloop()
-        self.conn.commit()
-        self.conn.close()
+        # -----------------------------
+        # Layout: Header, Toolbar, Content, Statusbar
+        # -----------------------------
+        self._build_header()
+        self._build_toolbar()
+        self._build_content()
+        self._build_statusbar()
 
-    def connect_to_database(self):
-        # Connect to the SQLite database and create necessary tables
-        try:
-            self.conn = sqlite3.connect('restaurant.db')
-            self.cursor = self.conn.cursor()
-            self.create_tables()
-        except sqlite3.Error as e:
-            print(f"Error connecting to database: {e}")
+        # Default view
+        self.show_dashboard()
 
-    def create_tables(self):
-        # Create database tables if they do not exist
-        try:
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS menu (
-                    item TEXT PRIMARY KEY,
-                    price INTEGER
-                );
-            ''')
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS customer (
-                    name TEXT,
-                    quantity INTEGER,
-                    orders TEXT,
-                    order_id INTEGER
-                );
-            ''')
-        except sqlite3.Error as e:
-            print(f"Error creating tables: {e}")
+        # Validators
+        self.only_int = self.root.register(lambda P: P == "" or P.isdigit())
 
-    def create_widgets(self):
-        # Create the main GUI widgets
-        self.frame = ttk.Frame(self.root, padding="20")
-        self.frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+    # -----------------------------
+    # Window sections
+    # -----------------------------
+    def _build_header(self):
+        header = tk.Frame(self.root, bg=self.COLOR_BG, height=68)
+        header.grid(row=0, column=0, sticky="nsew")
+        header.grid_columnconfigure(0, weight=1)
 
-        ttk.Label(self.frame, text="Restaurant Management System", style="TLabel").grid(row=0, column=0, columnspan=2, pady=10)
-        
-        # Define menu options and corresponding functions
-        options = [
-            ("Add a Customer", self.get_input),
-            ("Add an Element", self.add_element),
-            ("Delete Customer", self.delete_cus),
-            ("Delete Element", self.delete_ele),
-            ("Update the Price", self.update_p),
-            ("Get a Customer's Receipt", self.name_to_show)
+        title = ttk.Label(
+            header, text="Restaurant Management System", style="Header.TLabel")
+        title.grid(row=0, column=0, sticky="w", padx=20, pady=(12, 0))
+        subtitle = ttk.Label(
+            header, text="Orders · Menu · Customers", style="SubHeader.TLabel")
+        subtitle.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 12))
+
+    def _build_toolbar(self):
+        toolbar = ttk.Frame(self.root, style="Toolbar.TFrame")
+        toolbar.grid(row=1, column=0, sticky="ew")
+        for i in range(1):
+            toolbar.grid_columnconfigure(i, weight=1)
+
+        # Toolbar buttons
+        btns = [
+            ("➕ Add Order", self.get_input, "Create a new customer order"),
+            ("🍽️ Add Menu Item", self.add_element, "Insert or update a menu item"),
+            ("✏️ Update Price", self.update_p, "Change the price of a menu item"),
+            ("🧾 Customer Receipt", self.name_to_show,
+             "View a customer's orders and totals"),
+            ("🗑️ Delete Customer", self.delete_cus,
+             "Remove all orders by a customer"),
+            ("🗑️ Delete Menu Item", self.delete_ele,
+             "Remove an item from the menu"),
         ]
+        btnbar = ttk.Frame(toolbar)
+        btnbar.grid(row=0, column=0, sticky="w", padx=16, pady=10)
 
-        # Create buttons for each menu option
-        row_counter = 1
-        for text, command in options:
-            ttk.Button(self.frame, text=text, command=command, style="TButton").grid(row=row_counter, column=0, pady=5, sticky=tk.W)
-            row_counter += 1
+        for i, (label, cmd, tip) in enumerate(btns):
+            style = "Primary.TButton" if i in (0, 1) else "TButton"
+            b = ttk.Button(btnbar, text=label, command=cmd, style=style)
+            b.grid(row=0, column=i, padx=(0 if i == 0 else 8, 8))
+            ToolTip(b, tip)
+
+    def _build_content(self):
+        # Main content area (uses a single swapping frame)
+        self.content = ttk.Frame(self.root, padding=16)
+        self.content.grid(row=2, column=0, sticky="nsew")
+        self.root.grid_rowconfigure(2, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+
+    def _build_statusbar(self):
+        self.status_var = tk.StringVar(value="Ready")
+        self.status = ttk.Label(
+            self.root, textvariable=self.status_var, style="Status.TLabel")
+        self.status.grid(row=3, column=0, sticky="ew")
+
+    # -----------------------------
+    # DB
+    # -----------------------------
+    def connect_to_database(self):
+        try:
+            self.conn = create_connection()
+            self.cursor = self.conn.cursor()
+            init_db(self.conn)
+            seed_menu_if_empty(self.conn)
+        except sqlite3.Error as e:
+            messagebox.showerror("Database error", str(e))
+            raise
+
+    # -----------------------------
+    # Utilities
+    # -----------------------------
+    def set_status(self, text: str, kind: str = "info"):
+        prefix = {"info": "ℹ️", "ok": "✅",
+                  "warn": "⚠️", "err": "❌"}.get(kind, "ℹ️")
+        self.status_var.set(f"{prefix} {text}")
+
+    def clear_content(self):
+        for w in self.content.winfo_children():
+            w.destroy()
 
     def execute_query(self, query, parameters=None):
-        # Execute an SQL query and return the result
         try:
-            if parameters:
+            if parameters is not None:
                 self.cursor.execute(query, parameters)
             else:
                 self.cursor.execute(query)
+            qt = query.lstrip().split(" ", 1)[0].upper()
+            if qt in {"INSERT", "UPDATE", "DELETE", "REPLACE"}:
+                self.conn.commit()
+                return []
             return self.cursor.fetchall()
         except sqlite3.Error as e:
-            print(f"Error executing query: {e}")
+            self.set_status(f"DB error: {e}", "err")
             return []
 
-    def clear_frame(self):
-        # Clear all widgets in the main frame
-        for widget in self.frame.winfo_children():
-            widget.destroy()
+    # -----------------------------
+    # Dashboard (read-only snapshots)
+    # -----------------------------
+    def show_dashboard(self):
+        self.clear_content()
+        wrap = ttk.Frame(self.content)
+        wrap.pack(fill="both", expand=True)
+        wrap.grid_columnconfigure(0, weight=1)
+        wrap.grid_columnconfigure(1, weight=1)
 
-    def get_input(self):
-        # Function to get customer input for placing an order
-        self.clear_frame()
-        ttk.Label(self.frame, text="Enter Customer Name: ").grid(row=0, column=0)
-        name_var = tk.StringVar()
-        ttk.Entry(self.frame, textvariable=name_var).grid(row=0, column=1)
-        order_num = tk.IntVar()
-        ttk.Label(self.frame, text="How many elements are you ordering: ").grid(row=1, column=0)
-        ttk.Entry(self.frame, textvariable=order_num).grid(row=1, column=1)
-        ttk.Button(self.frame, text="Add", command=lambda: self.get_all(name_var, order_num)).grid(row=2, column=0)
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
+        # Card: Menu overview
+        menu_card = ttk.Labelframe(
+            wrap, text="Menu Overview", style="Card.TLabelframe", padding=12)
+        menu_card.grid(row=0, column=0, sticky="nsew",
+                       padx=(0, 12), pady=(0, 12))
+        self._menu_tree = ttk.Treeview(menu_card, columns=(
+            "item", "price"), show="headings", height=10)
+        self._menu_tree.heading("item", text="Item")
+        self._menu_tree.heading("price", text="Price")
+        self._menu_tree.column("item", anchor="w", width=240)
+        self._menu_tree.column("price", anchor="e", width=120)
+        self._menu_tree.pack(fill="both", expand=True)
+        self._refresh_menu_tree(self._menu_tree)
 
-    def get_all(self, name_var, num_e):
-        # Function to get details of multiple items in an order
-        self.clear_frame()
-        label_add = ttk.Label(self.frame, text="Added Successfully")
-        label_add.grid(row=0, column=0)
+        # Card: Recent customers (names only)
+        cust_card = ttk.Labelframe(
+            wrap, text="Recent Customers", style="Card.TLabelframe", padding=12)
+        cust_card.grid(row=0, column=1, sticky="nsew",
+                       padx=(12, 0), pady=(0, 12))
+        self._cust_tree = ttk.Treeview(cust_card, columns=(
+            "name", "orders"), show="headings", height=10)
+        self._cust_tree.heading("name", text="Customer")
+        self._cust_tree.heading("orders", text="# Orders")
+        self._cust_tree.column("name", anchor="w", width=240)
+        self._cust_tree.column("orders", anchor="e", width=120)
+        self._cust_tree.pack(fill="both", expand=True)
+        self._refresh_recent_customers(self._cust_tree)
 
-        name = name_var.get()
-        num = num_e.get()
-        num = int(num)
-        list2 = self.menu_list()
+        self.set_status("Dashboard ready", "ok")
 
-        list_entry = []
-        list_order = []
+    def _refresh_menu_tree(self, tree):
+        for i in tree.get_children():
+            tree.delete(i)
+        rows = self.execute_query(
+            "SELECT item, price FROM menu ORDER BY item COLLATE NOCASE;")
+        for idx, (item, price) in enumerate(rows):
+            tag = "even" if idx % 2 == 0 else "odd"
+            tree.insert("", "end", values=(item, price), tags=(tag,))
+        tree.tag_configure("odd", background=self.ROW_ALT)
 
-        for i in range(0, num):
-            # Create dropdowns for menu items and entry fields for quantities
-            item = ttk.Combobox(self.frame)
-            item['values'] = list2
-            item.grid(padx=2, pady=1)
-            entry1 = ttk.Entry(self.frame)
-            entry1.grid()
-            list_entry.append(entry1)
-            list_order.append(item)
+    def _refresh_recent_customers(self, tree):
+        for i in tree.get_children():
+            tree.delete(i)
+        rows = self.execute_query(
+            """
+            SELECT name, COUNT(DISTINCT order_id) as cnt
+            FROM customer
+            GROUP BY name
+            ORDER BY MAX(order_id) DESC
+            LIMIT 20;
+            """
+        )
+        for idx, (name, cnt) in enumerate(rows):
+            tag = "even" if idx % 2 == 0 else "odd"
+            tree.insert("", "end", values=(name, cnt), tags=(tag,))
+        tree.tag_configure("odd", background=self.ROW_ALT)
 
-        button_num = ttk.Button(self.frame, text="Order", command=lambda: self.get_quan(name, button_num, list_entry, list_order))
-        button_num.grid()
-
-    def add_element(self):
-        # Function to add a new element (menu item)
-        self.clear_frame()
-        element = tk.StringVar()
-        ttk.Label(self.frame, text="Enter Element Name: ").grid(row=0, column=0)
-        ttk.Entry(self.frame, textvariable=element).grid(row=0, column=1)
-        price = tk.IntVar()
-        ttk.Label(self.frame, text="Enter Price: ").grid(row=1, column=0)
-        ttk.Entry(self.frame, textvariable=price).grid(row=1, column=1)
-        ttk.Button(self.frame, text="Add Element", command=lambda: self.add_element_data(element, price)).grid(row=2, column=0)
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
-
-    def add_element_data(self, elem, pric):
-        # Function to add data for a new element to the database
-        element = elem.get()
-        price = int(pric.get())
-        list_price = []
-        list_cmp = []
-
-        list_price.extend((element, price))
-        query = "SELECT item FROM menu;"
-        list_cmp = self.execute_query(query)
-
-        for i in range(len(list_cmp)):
-            if element == list_cmp[i][0]:
-                label_e = ttk.Label(self.frame, text="This element already exists")
-                label_e.grid()
-                return
-
-        query = "INSERT INTO menu VALUES(?,?);"
-        self.execute_query(query, list_price)
-
-        label_d = ttk.Label(self.frame, text="Added Successfully")
-        label_d.grid()
-
-    def get_quan(self, name, button, list_entry, list_order):
-        # Function to get quantities and process the customer's order
-        quantity = [int(entry.get()) for entry in list_entry]
-
-        orders = [order.get() for order in list_order]
-        full_list = []
-
-        order_id = self.max_orderid() + 1
-
-        for i in range(len(list_entry)):
-            full_list.extend((name, quantity[i], orders[i], order_id))
-            query = "INSERT INTO customer VALUES(?,?,?,?);"
-            self.execute_query(query, full_list)
-            full_list.clear()
-            list_order[i].destroy()
-            list_entry[i].destroy()
-
-        self.create_widgets()
-
-    def delete_cus(self):
-        # Function to delete a customer's record
-        self.clear_frame()
-        label = ttk.Label(self.frame, text="Select customer to delete")
-        label.grid()
-
-        query = "SELECT DISTINCT name FROM customer;"
-        list_n = self.execute_query(query)
-        list_name = [item[0] for item in list_n]
-
-        names = ttk.Combobox(self.frame)
-        names['values'] = list_name
-        names.grid(padx=2, pady=1)
-
-        button = ttk.Button(self.frame, text="Delete", command=lambda: self.delete_name(names))
-        button.grid()
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
-
-    def delete_name(self, box):
-        # Function to delete a customer's record based on name
-        name = box.get()
-        query = "DELETE FROM customer WHERE name LIKE ?;"
-        self.execute_query(query, [name])
-        label = ttk.Label(self.frame, text="Deleted Successfully")
-        label.grid()
-        self.delete_cus()
-
-    def delete_ele(self):
-        # Function to delete a menu element
-        self.clear_frame()
-        label = ttk.Label(self.frame, text="Select element to delete")
-        label.grid()
-
-        list_ele = self.menu_list()
-        elements = ttk.Combobox(self.frame)
-        elements['values'] = list_ele
-        elements.grid(padx=2, pady=1)
-
-        button = ttk.Button(self.frame, text="Delete", command=lambda: self.delete_from_menu(elements))
-        button.grid()
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
-
-    def delete_from_menu(self, box):
-        # Function to delete a menu element based on item name
-        elem = box.get()
-        query = "DELETE FROM menu WHERE item LIKE ?;"
-        self.execute_query(query, [elem])
-        label = ttk.Label(self.frame, text="Deleted Successfully")
-        label.grid()
-        self.delete_ele()
-
-    def update_p(self):
-        # Function to update the price of a menu element
-        self.clear_frame()
-        label = ttk.Label(self.frame, text="Select element to update")
-        label.grid()
-
-        list_ele = self.menu_list()
-        elements = ttk.Combobox(self.frame)
-        elements['values'] = list_ele
-        elements.grid(padx=2, pady=1)
-
-        new = tk.IntVar()
-        ttk.Label(self.frame, text="Enter New Price: ").grid(row=1, column=2)
-        ttk.Entry(self.frame, textvariable=new).grid(row=1, column=1)
-        button = ttk.Button(self.frame, text="Update", command=lambda: self.update_price(elements, new))
-        button.grid()
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid()
-
-    def update_price(self, ele, num):
-        # Function to update the price of a menu element in the database
-        element = ele.get()
-        prices = int(num.get())
-        list1 = [element, prices]
-        query = "UPDATE menu SET price =? WHERE item LIKE ?;"
-        self.execute_query(query, list1)
-        label = ttk.Label(self.frame, text="Update Successful")
-        label.grid()
-        self.update_p()
-    
+    # -----------------------------
+    # Menu helpers
+    # -----------------------------
     def menu_list(self):
-        # Function to retrieve the list of menu items from the database
-        query = "SELECT item FROM menu;"
-        menu_items = self.execute_query(query)
-        return [item[0] for item in menu_items]
-
-    def add_menu_item(self):
-        # Function to add a new menu item to the database
-        self.clear_frame()
-        name_var = tk.StringVar()
-        ttk.Label(self.frame, text="Enter New Menu Item: ").grid(row=0, column=0)
-        ttk.Entry(self.frame, textvariable=name_var).grid(row=0, column=1)
-        price_var = tk.DoubleVar()
-        ttk.Label(self.frame, text="Enter Price: ").grid(row=1, column=0)
-        ttk.Entry(self.frame, textvariable=price_var).grid(row=1, column=1)
-        ttk.Button(self.frame, text="Add Menu Item", command=lambda: self.add_new_menu_item(name_var, price_var)).grid(row=2, column=0)
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=3, column=0)
-
-    def add_new_menu_item(self, name_var, price_var):
-        # Function to add a new menu item to the database
-        name = name_var.get()
-        price = price_var.get()
-        if name and price:
-            query = "INSERT INTO menu VALUES (?, ?);"
-            self.execute_query(query, (name, price))
-            label = ttk.Label(self.frame, text="Menu Item Added Successfully")
-            label.grid()
-        else:
-            label = ttk.Label(self.frame, text="Please enter both name and price")
-            label.grid()
-
-    def name_to_show(self):
-        # Function to display a customer's receipt
-        self.clear_frame()
-        query = "SELECT DISTINCT name FROM customer;"
-        list1 = self.execute_query(query)
-        names = [item[0] for item in list1]
-
-        item = ttk.Combobox(self.frame)
-        item['values'] = names
-        item.grid(row=0, column=0)
-
-        button = ttk.Button(self.frame, text="Show Receipt", command=lambda: self.show_receipt(item))
-        button.grid(row=2, column=2)
-        ttk.Button(self.frame, text="Back", command=self.create_widgets).grid(row=0, column=6)
-
-    def show_receipt(self, entry):
-        # Function to display a customer's receipt with details of their orders
-        name = entry.get()
-        query = "SELECT DISTINCT order_id FROM customer WHERE name LIKE ?;"
-        query_2 = "SELECT orders FROM customer WHERE name LIKE ?;"
-        orderid_list = self.execute_query(query, [name])
-        food_list = self.execute_query(query_2, [name])
-        total_price = 0
-
-
-        quan_row = 4
-        foo_row = 4
-        price_row = 4
-
-        for i in range(len(orderid_list)):
-
-            query = "SELECT DISTINCT orders FROM customer WHERE order_id LIKE ?;"
-            food = self.execute_query(query, [orderid_list[i][0]])
-            prices = self.get_prices(food_list[i][0])
-            quantity = self.get_quantity(orderid_list[i][0], food)
-            total_price += prices[0]* quantity[0]
-        
-            orders_num = str(len(orderid_list))
-            orders_num = orders_num + " Orders"
-            label = ttk.Label(self.frame, text=orders_num)
-            label.grid(row=3, column=3)
-
-            for j in range(len(quantity)):
-                if j < len(prices):  # Check if j is within the valid range of prices
-                    label1 = ttk.Label(self.frame, text=f"Quantity: {quantity[j]}")
-                    label1.grid(row=quan_row, column=2)
-                    label2 = ttk.Label(self.frame, text=f"Food: {food[j][0]}")
-                    label2.grid(row=foo_row, column=0)
-                    label3 = ttk.Label(self.frame, text=f"Price: {prices[j]}")
-                    label3.grid(row=price_row, column=4)
-                    foo_row += 1
-                    quan_row += 1
-                    price_row += 1
-
-            if i == len(orderid_list) - 1:
-                continue
-            else:
-                label = ttk.Label(self.frame, text="Next Order")
-                label.grid(row=quan_row, column=2)
-
-            foo_row += 1
-            quan_row += 1
-            price_row += 1
-            prices.clear()
-            food.clear()
-            quantity.clear()
-        label3 = ttk.Label(self.frame, text=f"Total Price: {total_price}")
-        label3.grid()
-
-
-    def get_prices(self, food):
-        query = "SELECT DISTINCT price FROM menu WHERE item LIKE ?;"
-        prices = self.execute_query(query, [food])
-        return [price[0] for price in prices]
-
-    def get_total(self, prices):
-        total = sum(prices)
-        return f"Total: {total}"
-
-    def get_quantity(self, order_id, food):
-        query = "SELECT DISTINCT quantity FROM customer WHERE order_id LIKE ?;"
-        quantities = self.execute_query(query, [order_id])
-        return [quantity[0] for quantity in quantities]
+        rows = self.execute_query(
+            "SELECT item FROM menu ORDER BY item COLLATE NOCASE;")
+        return [r[0] for r in rows]
 
     def max_orderid(self):
-        query = "SELECT MAX(order_id) FROM customer;"
-        max_order_id = self.execute_query(query)
-        return max_order_id[0][0] if max_order_id[0][0] else 0
-    
+        row = self.execute_query("SELECT MAX(order_id) FROM customer;")
+        return row[0][0] if row and row[0][0] is not None else 0
 
-    
+    # -----------------------------
+    # Views
+    # -----------------------------
+    def get_input(self):
+        self.clear_content()
+        card = ttk.Labelframe(self.content, text="Add Order",
+                              style="Card.TLabelframe", padding=12)
+        card.pack(fill="x", pady=(0, 12))
+
+        form = ttk.Frame(card)
+        form.pack(fill="x")
+
+        ttk.Label(form, text="Customer Name") .grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+        name_var = tk.StringVar()
+        name_ent = ttk.Entry(form, textvariable=name_var, width=32)
+        name_ent.grid(row=0, column=1, sticky="w", pady=4)
+
+        ttk.Label(form, text="# of Items").grid(
+            row=0, column=2, sticky="w", padx=(16, 8), pady=4)
+        num_var = tk.StringVar()
+        num_ent = ttk.Entry(form, textvariable=num_var, width=10, validate="key",
+                            validatecommand=(self.only_int, "%P"))
+        num_ent.grid(row=0, column=3, sticky="w", pady=4)
+
+        nxt = ttk.Button(form, text="Next", style="Primary.TButton",
+                         command=lambda: self.get_all(name_var, num_var))
+        nxt.grid(row=0, column=4, padx=(16, 0))
+        ToolTip(nxt, "Proceed to select items and quantities")
+
+        self.set_status("Enter customer name and number of items")
+
+    def get_all(self, name_var, num_var):
+        name = name_var.get().strip()
+        if not name:
+            self.set_status("Please enter a customer name", "warn")
+            return
+        try:
+            num = int(num_var.get())
+        except ValueError:
+            self.set_status("Please enter a valid number of items", "warn")
+            return
+        if num <= 0:
+            self.set_status("Number of items must be > 0", "warn")
+            return
+
+        self.clear_content()
+        card = ttk.Labelframe(self.content, text="Order Items",
+                              style="Card.TLabelframe", padding=12)
+        card.pack(fill="x", pady=(0, 12))
+
+        list2 = self.menu_list()
+        if not list2:
+            self.set_status("Menu is empty. Add menu items first.", "warn")
+            return
+
+        rows_frame = ttk.Frame(card)
+        rows_frame.pack(fill="x")
+
+        item_vars = []
+        qty_vars = []
+
+        for i in range(num):
+            ttk.Label(rows_frame, text=f"Item {i+1}").grid(row=i,
+                                                           column=0, sticky="w", padx=(0, 8), pady=3)
+            item_var = tk.StringVar(value=list2[0])
+            cmb = ttk.Combobox(rows_frame, textvariable=item_var,
+                               values=list2, width=36, state="readonly")
+            cmb.grid(row=i, column=1, sticky="w", pady=3)
+
+            ttk.Label(rows_frame, text="Qty").grid(
+                row=i, column=2, sticky="w", padx=(12, 8))
+            qty_var = tk.StringVar(value="1")
+            qty = ttk.Entry(rows_frame, textvariable=qty_var, width=10, validate="key",
+                            validatecommand=(self.only_int, "%P"))
+            qty.grid(row=i, column=3, sticky="w")
+
+            item_vars.append(item_var)
+            qty_vars.append(qty_var)
+
+        actions = ttk.Frame(card)
+        actions.pack(fill="x", pady=(8, 0))
+        place_btn = ttk.Button(actions, text="Place Order", style="Primary.TButton",
+                               command=lambda: self.get_quan(name, item_vars, qty_vars))
+        place_btn.pack(side="left")
+
+        ttk.Button(actions, text="Cancel", command=self.show_dashboard).pack(
+            side="left", padx=8)
+
+        self.set_status("Select items and enter quantities")
+
+    def get_quan(self, name, item_vars, qty_vars):
+        try:
+            quantities = [int(q.get()) for q in qty_vars]
+        except ValueError:
+            self.set_status("Enter numeric quantities for all items", "warn")
+            return
+
+        orders = [v.get() for v in item_vars]
+        if any(not o for o in orders):
+            self.set_status("All rows must have an item selected", "warn")
+            return
+
+        order_id = self.max_orderid() + 1
+        for qty, item in zip(quantities, orders):
+            if qty <= 0:
+                self.set_status("Quantities must be > 0", "warn")
+                return
+
+        # Insert lines
+        for qty, item in zip(quantities, orders):
+            query = "INSERT INTO customer(name, quantity, orders, order_id) VALUES(?,?,?,?);"
+            self.execute_query(query, (name, qty, item, order_id))
+
+        self.set_status(f"Order #{order_id} for {name} placed", "ok")
+        self.show_dashboard()
+
+    def add_element(self):
+        self.clear_content()
+        card = ttk.Labelframe(
+            self.content, text="Add / Update Menu Item", style="Card.TLabelframe", padding=12)
+        card.pack(fill="x")
+
+        form = ttk.Frame(card)
+        form.pack(fill="x")
+
+        ttk.Label(form, text="Item Name").grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+        name_var = tk.StringVar()
+        name_ent = ttk.Entry(form, textvariable=name_var, width=36)
+        name_ent.grid(row=0, column=1, sticky="w", pady=4)
+
+        ttk.Label(form, text="Price").grid(
+            row=0, column=2, sticky="w", padx=(16, 8))
+        price_var = tk.StringVar()
+        price_ent = ttk.Entry(form, textvariable=price_var, width=12, validate="key",
+                              validatecommand=(self.only_int, "%P"))
+        price_ent.grid(row=0, column=3, sticky="w")
+
+        def submit():
+            item = name_var.get().strip()
+            if not item:
+                self.set_status("Please enter an item name", "warn")
+                return
+            try:
+                price = int(price_var.get())
+            except ValueError:
+                self.set_status("Please enter a valid integer price", "warn")
+                return
+
+            exists = self.execute_query(
+                "SELECT 1 FROM menu WHERE item = ?;", (item,))
+            if exists:
+                self.execute_query(
+                    "UPDATE menu SET price = ? WHERE item = ?;", (price, item))
+                self.set_status(f"Updated price for '{item}'", "ok")
+            else:
+                self.execute_query(
+                    "INSERT INTO menu(item, price) VALUES(?, ?);", (item, price))
+                self.set_status(f"Added '{item}' to menu", "ok")
+            self.show_dashboard()
+
+        ttk.Button(form, text="Save", style="Primary.TButton",
+                   command=submit).grid(row=0, column=4, padx=(16, 0))
+        ttk.Button(form, text="Back", command=self.show_dashboard).grid(
+            row=0, column=5, padx=(8, 0))
+
+        # Live menu table
+        table_card = ttk.Labelframe(
+            self.content, text="Current Menu", style="Card.TLabelframe", padding=12)
+        table_card.pack(fill="both", expand=True, pady=(12, 0))
+        tree = ttk.Treeview(table_card, columns=(
+            "item", "price"), show="headings")
+        tree.heading("item", text="Item")
+        tree.heading("price", text="Price")
+        tree.column("item", width=320, anchor="w")
+        tree.column("price", width=120, anchor="e")
+        tree.pack(fill="both", expand=True)
+        self._refresh_menu_tree(tree)
+
+    def delete_cus(self):
+        self.clear_content()
+        card = ttk.Labelframe(
+            self.content, text="Delete Customer", style="Card.TLabelframe", padding=12)
+        card.pack(fill="x")
+
+        ttk.Label(card, text="Select customer to delete").grid(
+            row=0, column=0, sticky="w")
+        names = [r[0] for r in self.execute_query(
+            "SELECT DISTINCT name FROM customer ORDER BY name COLLATE NOCASE;")]
+        name_var = tk.StringVar()
+        box = ttk.Combobox(card, textvariable=name_var,
+                           values=names, width=36, state="readonly")
+        box.grid(row=1, column=0, sticky="w", pady=6)
+
+        def do_delete():
+            name = name_var.get()
+            if not name:
+                self.set_status("Select a customer name", "warn")
+                return
+            if not messagebox.askyesno("Confirm", f"Delete ALL orders for '{name}'? This cannot be undone."):
+                return
+            self.execute_query("DELETE FROM customer WHERE name = ?;", (name,))
+            self.set_status("Customer deleted", "ok")
+            self.delete_cus()
+
+        ttk.Button(card, text="Delete", style="Danger.TButton",
+                   command=do_delete).grid(row=2, column=0, pady=(4, 0))
+        ttk.Button(card, text="Back", command=self.show_dashboard).grid(
+            row=2, column=1, padx=8)
+
+    def delete_ele(self):
+        self.clear_content()
+        card = ttk.Labelframe(
+            self.content, text="Delete Menu Item", style="Card.TLabelframe", padding=12)
+        card.pack(fill="x")
+
+        ttk.Label(card, text="Select item to delete").grid(
+            row=0, column=0, sticky="w")
+        elements = self.menu_list()
+        item_var = tk.StringVar()
+        box = ttk.Combobox(card, textvariable=item_var,
+                           values=elements, width=36, state="readonly")
+        box.grid(row=1, column=0, sticky="w", pady=6)
+
+        def do_delete():
+            item = item_var.get()
+            if not item:
+                self.set_status("Select an item to delete", "warn")
+                return
+            if not messagebox.askyesno("Confirm", f"Delete menu item '{item}'?"):
+                return
+            self.execute_query("DELETE FROM menu WHERE item = ?;", (item,))
+            self.set_status("Menu item deleted", "ok")
+            self.delete_ele()
+
+        ttk.Button(card, text="Delete", style="Danger.TButton",
+                   command=do_delete).grid(row=2, column=0, pady=(4, 0))
+        ttk.Button(card, text="Back", command=self.show_dashboard).grid(
+            row=2, column=1, padx=8)
+
+    def update_p(self):
+        self.clear_content()
+        card = ttk.Labelframe(self.content, text="Update Price",
+                              style="Card.TLabelframe", padding=12)
+        card.pack(fill="x")
+
+        ttk.Label(card, text="Select item").grid(row=0, column=0, sticky="w")
+        elements = self.menu_list()
+        item_var = tk.StringVar()
+        box = ttk.Combobox(card, textvariable=item_var,
+                           values=elements, width=36, state="readonly")
+        box.grid(row=1, column=0, sticky="w", pady=6)
+
+        ttk.Label(card, text="New Price").grid(
+            row=1, column=1, sticky="w", padx=(16, 8))
+        price_var = tk.StringVar()
+        price_ent = ttk.Entry(card, textvariable=price_var, width=12, validate="key",
+                              validatecommand=(self.only_int, "%P"))
+        price_ent.grid(row=1, column=2, sticky="w")
+
+        def do_update():
+            item = item_var.get()
+            if not item:
+                self.set_status("Select an item to update", "warn")
+                return
+            try:
+                price = int(price_var.get())
+            except ValueError:
+                self.set_status("Enter a valid integer price", "warn")
+                return
+            self.execute_query(
+                "UPDATE menu SET price = ? WHERE item = ?;", (price, item))
+            self.set_status("Price updated", "ok")
+            self.update_p()
+
+        ttk.Button(card, text="Update", style="Primary.TButton",
+                   command=do_update).grid(row=2, column=0, pady=(4, 0))
+        ttk.Button(card, text="Back", command=self.show_dashboard).grid(
+            row=2, column=1, padx=8)
+
+    def name_to_show(self):
+        self.clear_content()
+        card = ttk.Labelframe(
+            self.content, text="Customer Receipt", style="Card.TLabelframe", padding=12)
+        card.pack(fill="both", expand=True)
+
+        top = ttk.Frame(card)
+        top.pack(fill="x")
+
+        names = [r[0] for r in self.execute_query(
+            "SELECT DISTINCT name FROM customer ORDER BY name COLLATE NOCASE;")]
+        ttk.Label(top, text="Customer").pack(side="left")
+        name_var = tk.StringVar()
+        box = ttk.Combobox(top, textvariable=name_var,
+                           values=names, width=36, state="readonly")
+        box.pack(side="left", padx=(8, 8))
+
+        ttk.Button(top, text="Show Receipt", style="Primary.TButton",
+                   command=lambda: self.show_receipt(box)).pack(side="left")
+
+        # Tree
+        cols = ("qty", "item", "price", "total")
+        self.receipt = ttk.Treeview(
+            card, columns=cols, show="headings", height=16)
+        self.receipt.heading("qty", text="Qty")
+        self.receipt.heading("item", text="Item")
+        self.receipt.heading("price", text="Unit Price")
+        self.receipt.heading("total", text="Line Total")
+        self.receipt.column("qty", width=80, anchor="e")
+        self.receipt.column("item", width=320, anchor="w")
+        self.receipt.column("price", width=120, anchor="e")
+        self.receipt.column("total", width=140, anchor="e")
+        self.receipt.pack(fill="both", expand=True, pady=(8, 0))
+
+        # scrollbar
+        vs = ttk.Scrollbar(self.receipt, orient=tk.VERTICAL,
+                           command=self.receipt.yview)
+        self.receipt.configure(yscrollcommand=vs.set)
+        vs.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+        self.total_label = ttk.Label(
+            card, text="Total: 0", font=("Segoe UI Semibold", 12))
+        self.total_label.pack(anchor="w", pady=(8, 0))
+
+    def show_receipt(self, box):
+        name = box.get()
+        if not name:
+            self.set_status("Select a customer to show receipt", "warn")
+            return
+        for i in self.receipt.get_children():
+            self.receipt.delete(i)
+
+        orderid_list = self.execute_query(
+            "SELECT DISTINCT order_id FROM customer WHERE name = ? ORDER BY order_id;",
+            (name,),
+        )
+        grand_total = 0
+        row_index = 0
+
+        for (oid,) in orderid_list:
+            # Section label row
+            self.receipt.insert("", "end", values=(
+                "", f"Order #{oid}", "", ""))
+            row_index += 1
+
+            rows = self.execute_query(
+                """
+                SELECT c.quantity, c.orders, m.price
+                FROM customer c
+                JOIN menu m ON m.item = c.orders
+                WHERE c.order_id = ?
+                ORDER BY c.rowid
+                """,
+                (oid,),
+            )
+            order_total = 0
+            for qty, item_name, unit_price in rows:
+                line_total = int(qty) * int(unit_price)
+                order_total += line_total
+                tag = "odd" if (row_index % 2 == 1) else "even"
+                self.receipt.insert("", "end", values=(
+                    qty, item_name, unit_price, line_total), tags=(tag,))
+                row_index += 1
+            grand_total += order_total
+            self.receipt.insert("", "end", values=(
+                "", "—", "—", f"Subtotal: {order_total}"))
+            row_index += 1
+
+        self.receipt.tag_configure("odd", background=self.ROW_ALT)
+        self.total_label.configure(text=f"Total: {grand_total}")
+        self.set_status(f"Loaded receipt for {name}")
+
+    # -----------------------------
+    # Run
+    # -----------------------------
+    def run(self):
+        self.root.mainloop()
+        try:
+            self.conn.commit()
+            self.conn.close()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     app = RestaurantManagementSystem()
